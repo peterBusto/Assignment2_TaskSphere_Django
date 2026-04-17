@@ -48,7 +48,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'corsheaders',
-    'accounts'
+    'accounts',
+    'tasks'
 ]
 
 MIDDLEWARE = [
@@ -87,7 +88,7 @@ WSGI_APPLICATION = 'Assignment2_TaskSphere_Django.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 # Use SQLite for testing, PostgreSQL for production
-if 'test' in sys.argv or os.getenv('DJANGO_SETTINGS_MODULE') == 'Assignment2_TaskSphere_Django.settings':
+if 'test' in sys.argv:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -103,6 +104,18 @@ elif os.getenv('PGDATABASE'):
             'PASSWORD': os.getenv('PGPASSWORD'),
             'HOST': os.getenv('PGHOST'),
             'PORT': os.getenv('PGPORT', '5432'),
+        }
+    }
+elif os.getenv('VERCEL') or os.getenv('VERCEL_ENV'):
+    # Vercel production environment - use PostgreSQL
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('POSTGRES_DB'),
+            'USER': os.getenv('POSTGRES_USER'),
+            'PASSWORD': os.getenv('POSTGRES_PASSWORD'),
+            'HOST': os.getenv('POSTGRES_HOST'),
+            'PORT': os.getenv('POSTGRES_PORT', '5432'),
         }
     }
 else:

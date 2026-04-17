@@ -114,9 +114,11 @@ if __name__ == '__main__':
 
 from django.test import TestCase
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework.authtoken.models import Token
 from rest_framework import status
+from datetime import timedelta
 
 User = get_user_model()
 
@@ -696,6 +698,202 @@ class UserLogoutAPITests(TestCase):
         # Verify new token exists in database
         self.assertTrue(Token.objects.filter(user=self.user).exists())
         self.assertEqual(Token.objects.get(user=self.user).key, new_token)
+
+
+class TaskCreationAPITests(TestCase):
+    """Tests for task creation API endpoint."""
+    
+    def setUp(self):
+        """Set up test client and create a test user with token."""
+        self.client = APIClient()
+        self.task_create_url = '/api/tasks/create/'
+        
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+        
+        # Create and set authentication token
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+    
+    def test_create_task_success(self):
+        """Test successful task creation with all fields."""
+        data = {
+            'title': 'Complete Django Project',
+            'description': 'Finish the task management system with all CRUD operations',
+            'priority': 'high',
+            'due_date': (timezone.now() + timedelta(days=7)).isoformat()
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('message', response.data)
+        self.assertIn('task', response.data)
+        self.assertEqual(response.data['message'], 'Task created successfully')
+        
+        # Verify task was created in database
+        from tasks.models import Task
+        task = Task.objects.first()
+        self.assertEqual(task.title, 'Complete Django Project')
+        self.assertEqual(task.description, 'Finish the task management system with all CRUD operations')
+        self.assertEqual(task.priority, 'high')
+        self.assertEqual(task.user, self.user)
+        self.assertIsNotNone(task.due_date)
+    
+    def test_create_task_minimal_data(self):
+        """Test creating task with only required fields."""
+        data = {
+            'title': 'Simple Task'
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Verify task was created with default values
+        from tasks.models import Task
+        task = Task.objects.first()
+        self.assertEqual(task.title, 'Simple Task')
+        self.assertEqual(task.priority, 'medium')  # Default priority
+        self.assertEqual(task.description, '')  # Empty description
+        self.assertIsNone(task.due_date)  # No due date set
+    
+    def test_create_task_title_validation(self):
+        """Test validation for title field."""
+        # Test title too short
+        data = {
+            'title': 'Hi',
+            'description': 'This title is too short'
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('title', response.data)
+        self.assertIn('at least 3 characters', str(response.data))
+        
+        # Verify no task was created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 0)
+    
+    def test_create_task_priority_validation(self):
+        """Test validation for priority field."""
+        data = {
+            'title': 'Valid Task Title',
+            'priority': 'urgent'  # Invalid priority
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('priority', response.data)
+        self.assertIn('not a valid choice', str(response.data))
+        
+        # Verify no task was created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 0)
+    
+    def test_create_task_due_date_validation(self):
+        """Test validation for due date field."""
+        data = {
+            'title': 'Valid Task Title',
+            'due_date': (timezone.now() - timedelta(days=1)).isoformat()  # Past date
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('due_date', response.data)
+        self.assertIn('cannot be in the past', str(response.data))
+        
+        # Verify no task was created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 0)
+    
+    def test_create_task_unauthenticated(self):
+        """Test that unauthenticated users cannot create tasks."""
+        # Remove authentication
+        self.client.credentials()
+        
+        data = {
+            'title': 'Test Task'
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify no task was created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 0)
+    
+    def test_create_task_with_invalid_token(self):
+        """Test that invalid token cannot create tasks."""
+        self.client.credentials(HTTP_AUTHORIZATION='Token invalidtoken123')
+        
+        data = {
+            'title': 'Test Task'
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify no task was created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 0)
+    
+    def test_create_task_user_association(self):
+        """Test that task is properly associated with authenticated user."""
+        # Create another user
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='otherpass123'
+        )
+        
+        data = {
+            'title': 'User Task Test'
+        }
+        
+        response = self.client.post(self.task_create_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        
+        # Verify task is associated with authenticated user (not other user)
+        from tasks.models import Task
+        task = Task.objects.first()
+        self.assertEqual(task.user, self.user)
+        self.assertNotEqual(task.user, other_user)
+    
+    def test_create_task_all_priority_levels(self):
+        """Test creating tasks with all valid priority levels."""
+        priorities = ['low', 'medium', 'high']
+        
+        for priority in priorities:
+            data = {
+                'title': f'Task with {priority} priority',
+                'priority': priority
+            }
+            
+            response = self.client.post(self.task_create_url, data, format='json')
+            
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+            
+            # Verify priority was set correctly
+            from tasks.models import Task
+            task = Task.objects.get(title=f'Task with {priority} priority')
+            self.assertEqual(task.priority, priority)
+        
+        # Verify all tasks were created
+        from tasks.models import Task
+        self.assertEqual(Task.objects.count(), 3)
 
 
 class DjangoSetupTests(TestCase):
