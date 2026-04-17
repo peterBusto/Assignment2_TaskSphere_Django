@@ -115,6 +115,8 @@ if __name__ == '__main__':
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from rest_framework.test import APIClient
+from rest_framework.authtoken.models import Token
+from rest_framework import status
 
 User = get_user_model()
 
@@ -600,6 +602,100 @@ class UserLoginAPITests(TestCase):
         
         self.assertEqual(response.status_code, 400)
         self.assertIn('email', response.data)
+
+
+class UserLogoutAPITests(TestCase):
+    """Tests for user logout API endpoint."""
+    
+    def setUp(self):
+        """Set up test client and create a test user with token."""
+        self.client = APIClient()
+        self.logout_url = '/api/auth/logout/'
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+        # Create token for the user
+        self.token = Token.objects.create(user=self.user)
+    
+    def test_logout_success(self):
+        """Test successful logout with valid token."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        response = self.client.post(self.logout_url, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['message'], 'Logout successful')
+        
+        # Verify token is deleted
+        self.assertFalse(Token.objects.filter(user=self.user).exists())
+    
+    def test_logout_without_authentication(self):
+        """Test logout without authentication token."""
+        response = self.client.post(self.logout_url, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_logout_with_invalid_token(self):
+        """Test logout with invalid token."""
+        self.client.credentials(HTTP_AUTHORIZATION='Token invalidtoken123')
+        response = self.client.post(self.logout_url, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_logout_when_no_token_exists(self):
+        """Test logout when user has no token."""
+        # Delete the token first
+        self.token.delete()
+        
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        response = self.client.post(self.logout_url, format='json')
+        
+        # Should return 401 because token doesn't exist
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_logout_prevents_token_reuse(self):
+        """Test that deleted token cannot be reused."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        
+        # First logout
+        response1 = self.client.post(self.logout_url, format='json')
+        self.assertEqual(response1.status_code, status.HTTP_200_OK)
+        
+        # Try to use the same token again
+        response2 = self.client.post(self.logout_url, format='json')
+        self.assertEqual(response2.status_code, status.HTTP_401_UNAUTHORIZED)
+    
+    def test_logout_and_login_creates_new_token(self):
+        """Test that user can login again after logout."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        
+        # Logout
+        logout_response = self.client.post(self.logout_url, format='json')
+        self.assertEqual(logout_response.status_code, status.HTTP_200_OK)
+        
+        # Clear credentials before trying to login again
+        self.client.credentials()
+        
+        # Login again
+        login_response = self.client.post('/api/auth/login/', {
+            'email': 'test@example.com',
+            'password': 'testpass123'
+        }, format='json')
+        
+        self.assertEqual(login_response.status_code, status.HTTP_200_OK)
+        self.assertIn('token', login_response.data)
+        
+        # Verify new token is different from the old one
+        new_token = login_response.data['token']
+        self.assertNotEqual(new_token, self.token.key)
+        
+        # Verify new token exists in database
+        self.assertTrue(Token.objects.filter(user=self.user).exists())
+        self.assertEqual(Token.objects.get(user=self.user).key, new_token)
 
 
 class DjangoSetupTests(TestCase):
