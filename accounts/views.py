@@ -1,6 +1,6 @@
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 from .serializers import UserRegistrationSerializer, UserLoginSerializer
@@ -45,3 +45,22 @@ def register_user(request):
         }, status=status.HTTP_201_CREATED)
     
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def logout_user(request):
+    """
+    Logout user and invalidate auth token
+    """
+    try:
+        # Delete the user's token
+        token = Token.objects.get(user=request.user)
+        token.delete()
+        return Response({
+            'message': 'Logout successful'
+        }, status=status.HTTP_200_OK)
+    except Token.DoesNotExist:
+        return Response({
+            'message': 'No active token found'
+        }, status=status.HTTP_400_BAD_REQUEST)

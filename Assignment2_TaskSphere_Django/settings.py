@@ -86,15 +86,15 @@ WSGI_APPLICATION = 'Assignment2_TaskSphere_Django.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 # Use PostgreSQL if env vars are set, otherwise fallback to SQLite for testing
-if os.getenv('DB_NAME'):
+if os.getenv('PGDATABASE'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('DB_NAME'),
-            'USER': os.getenv('DB_USER'),
-            'PASSWORD': os.getenv('DB_PASSWORD'),
-            'HOST': os.getenv('DB_HOST'),
-            'PORT': os.getenv('DB_PORT'),
+            'NAME': os.getenv('PGDATABASE'),
+            'USER': os.getenv('PGUSER'),
+            'PASSWORD': os.getenv('PGPASSWORD'),
+            'HOST': os.getenv('PGHOST'),
+            'PORT': os.getenv('PGPORT', '5432'),
         }
     }
 else:
