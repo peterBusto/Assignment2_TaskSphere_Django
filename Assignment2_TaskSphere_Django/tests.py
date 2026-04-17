@@ -896,6 +896,226 @@ class TaskCreationAPITests(TestCase):
         self.assertEqual(Task.objects.count(), 3)
 
 
+class TaskStatusUpdateAPITests(TestCase):
+    """Tests for task status update API endpoint."""
+    
+    def setUp(self):
+        """Set up test client and create a test user with token and task."""
+        self.client = APIClient()
+        
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+        
+        # Create and set authentication token
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+        
+        # Create a test task
+        from tasks.models import Task
+        self.task = Task.objects.create(
+            title='Test Task',
+            description='This is a test task',
+            priority='medium',
+            status='todo',
+            user=self.user
+        )
+        self.status_update_url = f'/api/tasks/{self.task.id}/status/'
+    
+    def test_update_task_status_success(self):
+        """Test successful task status update."""
+        data = {'status': 'in_progress'}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('message', response.data)
+        self.assertEqual(response.data['message'], 'Task status updated successfully')
+        self.assertIn('task', response.data)
+        self.assertEqual(response.data['task']['status'], 'in_progress')
+        
+        # Verify task was updated in database
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.status, 'in_progress')
+    
+    def test_update_task_status_to_completed(self):
+        """Test updating task status to completed."""
+        data = {'status': 'completed'}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['task']['status'], 'completed')
+        
+        # Verify task was updated in database
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.status, 'completed')
+    
+    def test_update_task_status_invalid_status(self):
+        """Test updating task status with invalid status value."""
+        data = {'status': 'invalid_status'}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+        self.assertIn('not a valid choice', str(response.data))
+        
+        # Verify task status was not changed in database
+        from tasks.models import Task
+        unchanged_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(unchanged_task.status, 'todo')
+    
+    def test_update_task_status_empty_status(self):
+        """Test updating task status with empty status."""
+        data = {'status': ''}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+    
+    def test_update_task_status_missing_status_field(self):
+        """Test updating task status without status field."""
+        data = {}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        # Should still work since it's a partial update and no status field to update
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['task']['status'], 'todo')
+    
+    def test_update_task_status_unauthenticated(self):
+        """Test that unauthenticated users cannot update task status."""
+        # Remove authentication
+        self.client.credentials()
+        
+        data = {'status': 'in_progress'}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify task status was not changed in database
+        from tasks.models import Task
+        unchanged_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(unchanged_task.status, 'todo')
+    
+    def test_update_task_status_with_invalid_token(self):
+        """Test that invalid token cannot update task status."""
+        self.client.credentials(HTTP_AUTHORIZATION='Token invalidtoken123')
+        
+        data = {'status': 'in_progress'}
+        
+        response = self.client.patch(self.status_update_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        
+        # Verify task status was not changed in database
+        from tasks.models import Task
+        unchanged_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(unchanged_task.status, 'todo')
+    
+    def test_update_task_status_nonexistent_task(self):
+        """Test updating status of a task that doesn't exist."""
+        nonexistent_url = '/api/tasks/99999/status/'
+        data = {'status': 'in_progress'}
+        
+        response = self.client.patch(nonexistent_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+        self.assertEqual(response.data['error'], 'Task not found')
+    
+    def test_update_task_status_other_user_task(self):
+        """Test that user cannot update status of another user's task."""
+        # Create another user
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='otherpass123'
+        )
+        
+        # Create task for other user
+        from tasks.models import Task
+        other_task = Task.objects.create(
+            title='Other User Task',
+            description='This belongs to other user',
+            priority='high',
+            status='todo',
+            user=other_user
+        )
+        
+        # Try to update other user's task
+        other_task_url = f'/api/tasks/{other_task.id}/status/'
+        data = {'status': 'in_progress'}
+        
+        response = self.client.patch(other_task_url, data, format='json')
+        
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+        
+        # Verify other task status was not changed
+        unchanged_task = Task.objects.get(id=other_task.id)
+        self.assertEqual(unchanged_task.status, 'todo')
+    
+    def test_update_task_status_all_valid_transitions(self):
+        """Test all valid status transitions."""
+        from tasks.models import Task
+        valid_transitions = [
+            ('todo', 'in_progress'),
+            ('in_progress', 'completed'),
+            ('completed', 'todo'),  # Allow reopening completed tasks
+            ('todo', 'completed'),  # Allow direct completion
+        ]
+        
+        for initial_status, new_status in valid_transitions:
+            # Reset task to initial status
+            self.task.status = initial_status
+            self.task.save()
+            
+            # Update to new status
+            data = {'status': new_status}
+            response = self.client.patch(self.status_update_url, data, format='json')
+            
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(response.data['task']['status'], new_status)
+            
+            # Verify in database
+            updated_task = Task.objects.get(id=self.task.id)
+            self.assertEqual(updated_task.status, new_status)
+    
+    def test_task_creation_includes_default_status(self):
+        """Test that newly created tasks have default status."""
+        from tasks.models import Task
+        new_task = Task.objects.create(
+            title='New Task',
+            description='A new task',
+            priority='low',
+            user=self.user
+        )
+        
+        self.assertEqual(new_task.status, 'todo')
+    
+    def test_task_serializer_includes_status_field(self):
+        """Test that task serializer includes status field."""
+        from tasks.serializers import TaskSerializer
+        from tasks.models import Task
+        
+        task = Task.objects.get(id=self.task.id)
+        serializer = TaskSerializer(task)
+        
+        self.assertIn('status', serializer.data)
+        self.assertEqual(serializer.data['status'], 'todo')
+
+
 class DjangoSetupTests(TestCase):
     """Tests to verify Django is properly configured."""
     

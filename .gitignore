@@ -1,3 +1,6 @@
 .env
 .idea
-Tasksphere_Assignment2.postman_collection.json
+
+# Python cache
+__pycache__/
+*.pyc
