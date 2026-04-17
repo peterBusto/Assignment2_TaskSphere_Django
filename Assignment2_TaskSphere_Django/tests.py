@@ -474,6 +474,120 @@ class UserRegistrationAPITests(TestCase):
         # Should catch multiple errors: too short, missing uppercase, missing number, missing special character
 
 
+class UserLoginAPITests(TestCase):
+    """Tests for user login API endpoint."""
+    
+    def setUp(self):
+        """Set up test client and create a test user."""
+        self.client = APIClient()
+        self.login_url = '/api/auth/login/'
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+    
+    def test_login_success(self):
+        """Test successful login returns token."""
+        data = {
+            'email': 'test@example.com',
+            'password': 'testpass123'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('token', response.data)
+        self.assertIn('user_id', response.data)
+        self.assertEqual(response.data['email'], 'test@example.com')
+        self.assertEqual(response.data['username'], 'testuser')
+    
+    def test_login_invalid_email(self):
+        """Test login with non-existent email."""
+        data = {
+            'email': 'wrong@example.com',
+            'password': 'testpass123'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_login_invalid_password(self):
+        """Test login with wrong password."""
+        data = {
+            'email': 'test@example.com',
+            'password': 'wrongpassword'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_login_missing_email(self):
+        """Test login without email field."""
+        data = {
+            'password': 'testpass123'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_login_missing_password(self):
+        """Test login without password field."""
+        data = {
+            'email': 'test@example.com'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_login_empty_fields(self):
+        """Test login with empty email and password."""
+        data = {
+            'email': '',
+            'password': ''
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+    
+    def test_login_token_created(self):
+        """Test that token is created for user on first login."""
+        data = {
+            'email': 'test@example.com',
+            'password': 'testpass123'
+        }
+        
+        # First login should create token
+        response1 = self.client.post(self.login_url, data, format='json')
+        token1 = response1.data['token']
+        
+        # Second login should return same token
+        response2 = self.client.post(self.login_url, data, format='json')
+        token2 = response2.data['token']
+        
+        self.assertEqual(token1, token2)
+    
+    def test_login_invalid_credentials_message(self):
+        """Test login error message for invalid credentials."""
+        data = {
+            'email': 'test@example.com',
+            'password': 'wrongpassword'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('non_field_errors', response.data)
+
+
 class DjangoSetupTests(TestCase):
     """Tests to verify Django is properly configured."""
     
