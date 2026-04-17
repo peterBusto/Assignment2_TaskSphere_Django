@@ -17,7 +17,15 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t tasksphere-django-app .
+          
+      - name: Run migrations
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
+        run: |
+          docker run --rm tasksphere-django-app python manage.py migrate
  
       - name: Run tests inside container
+        env:
+          SECRET_KEY: ${{ secrets.SECRET_KEY }}
         run: |
           docker run --rm tasksphere-django-app python manage.py test
