@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -85,8 +86,15 @@ WSGI_APPLICATION = 'Assignment2_TaskSphere_Django.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# Use PostgreSQL if env vars are set, otherwise fallback to SQLite for testing
-if os.getenv('PGDATABASE'):
+# Use SQLite for testing, PostgreSQL for production
+if 'test' in sys.argv or os.getenv('DJANGO_SETTINGS_MODULE') == 'Assignment2_TaskSphere_Django.settings':
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
+elif os.getenv('PGDATABASE'):
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
