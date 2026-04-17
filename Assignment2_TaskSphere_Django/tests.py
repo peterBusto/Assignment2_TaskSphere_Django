@@ -515,6 +515,7 @@ class UserLoginAPITests(TestCase):
         response = self.client.post(self.login_url, data, format='json')
         
         self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
     
     def test_login_invalid_password(self):
         """Test login with wrong password."""
@@ -526,6 +527,7 @@ class UserLoginAPITests(TestCase):
         response = self.client.post(self.login_url, data, format='json')
         
         self.assertEqual(response.status_code, 400)
+        self.assertIn('password', response.data)
     
     def test_login_missing_email(self):
         """Test login without email field."""
@@ -575,8 +577,8 @@ class UserLoginAPITests(TestCase):
         
         self.assertEqual(token1, token2)
     
-    def test_login_invalid_credentials_message(self):
-        """Test login error message for invalid credentials."""
+    def test_login_invalid_password_message(self):
+        """Test login error message for wrong password."""
         data = {
             'email': 'test@example.com',
             'password': 'wrongpassword'
@@ -585,7 +587,19 @@ class UserLoginAPITests(TestCase):
         response = self.client.post(self.login_url, data, format='json')
         
         self.assertEqual(response.status_code, 400)
-        self.assertIn('non_field_errors', response.data)
+        self.assertIn('password', response.data)
+    
+    def test_login_nonexistent_user(self):
+        """Test login with email that doesn't exist in database."""
+        data = {
+            'email': 'nonexistent@example.com',
+            'password': 'somepassword123'
+        }
+        
+        response = self.client.post(self.login_url, data, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('email', response.data)
 
 
 class DjangoSetupTests(TestCase):
