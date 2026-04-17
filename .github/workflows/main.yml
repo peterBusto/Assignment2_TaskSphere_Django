@@ -26,4 +26,4 @@ jobs:
         env:
           SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
         run: |
-          docker run --rm -e SECRET_KEY=${{ secrets.DJANGO_SECRET_KEY }} tasksphere-django-app python manage.py test
+          docker run --rm -e SECRET_KEY="$DJANGO_SECRET_KEY" tasksphere-django-app python manage.py test
