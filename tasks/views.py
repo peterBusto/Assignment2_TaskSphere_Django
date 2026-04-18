@@ -3,7 +3,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from .models import Task
-from .serializers import TaskSerializer, TaskStatusUpdateSerializer
+from .serializers import TaskSerializer, TaskStatusUpdateSerializer, TaskUpdateSerializer
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
@@ -32,7 +32,7 @@ def list_tasks(request):
     serializer = TaskSerializer(tasks, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
 
-@api_view(['GET', 'PUT', 'DELETE'])
+@api_view(['GET', 'PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def task_detail(request, task_id):
     """
@@ -56,7 +56,17 @@ def task_detail(request, task_id):
                 'task': TaskSerializer(updated_task).data
             }, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    
+
+    elif request.method == 'PATCH':
+        serializer = TaskUpdateSerializer(task, data=request.data, partial=True, context={'request': request})
+        if serializer.is_valid():
+            updated_task = serializer.save()
+            return Response({
+                'message': 'Task updated successfully',
+                'task': TaskSerializer(updated_task).data
+            }, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
     elif request.method == 'DELETE':
         task.delete()
         return Response({'message': 'Task deleted successfully'}, status=status.HTTP_204_NO_CONTENT)

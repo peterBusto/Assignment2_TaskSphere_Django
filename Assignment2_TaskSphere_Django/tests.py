@@ -1108,12 +1108,243 @@ class TaskStatusUpdateAPITests(TestCase):
         """Test that task serializer includes status field."""
         from tasks.serializers import TaskSerializer
         from tasks.models import Task
-        
+
         task = Task.objects.get(id=self.task.id)
         serializer = TaskSerializer(task)
-        
+
         self.assertIn('status', serializer.data)
         self.assertEqual(serializer.data['status'], 'todo')
+
+
+class TaskUpdateAPITests(TestCase):
+    """Tests for task update API endpoint with PATCH method."""
+
+    def setUp(self):
+        """Set up test client and create a test user with token and task."""
+        self.client = APIClient()
+
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+
+        # Create and set authentication token
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+
+        # Create a test task
+        from tasks.models import Task
+        self.task = Task.objects.create(
+            title='Test Task',
+            description='This is a test task',
+            priority='medium',
+            status='todo',
+            user=self.user
+        )
+        self.task_update_url = f'/api/tasks/{self.task.id}/'
+
+    def test_update_task_title_success(self):
+        """Test successful task title update with PATCH."""
+        data = {'title': 'Updated Task Title'}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('message', response.data)
+        self.assertEqual(response.data['message'], 'Task updated successfully')
+        self.assertEqual(response.data['task']['title'], 'Updated Task Title')
+
+        # Verify task was updated in database
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.title, 'Updated Task Title')
+
+    def test_update_task_description_success(self):
+        """Test successful task description update with PATCH."""
+        data = {'description': 'Updated description'}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['task']['description'], 'Updated description')
+
+        # Verify only description changed, other fields unchanged
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.description, 'Updated description')
+        self.assertEqual(updated_task.title, 'Test Task')  # Unchanged
+        self.assertEqual(updated_task.priority, 'medium')  # Unchanged
+
+    def test_update_task_priority_success(self):
+        """Test successful task priority update with PATCH."""
+        data = {'priority': 'high'}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['task']['priority'], 'high')
+
+        # Verify task was updated in database
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.priority, 'high')
+
+    def test_update_task_multiple_fields_success(self):
+        """Test updating multiple fields at once with PATCH."""
+        data = {
+            'title': 'New Title',
+            'description': 'New Description',
+            'priority': 'low'
+        }
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['task']['title'], 'New Title')
+        self.assertEqual(response.data['task']['description'], 'New Description')
+        self.assertEqual(response.data['task']['priority'], 'low')
+
+        # Verify all fields updated in database
+        from tasks.models import Task
+        updated_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(updated_task.title, 'New Title')
+        self.assertEqual(updated_task.description, 'New Description')
+        self.assertEqual(updated_task.priority, 'low')
+
+    def test_update_task_status_via_patch_rejected(self):
+        """Test that status cannot be updated via general PATCH endpoint."""
+        data = {'status': 'completed'}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+        self.assertIn('cannot be updated here', str(response.data))
+
+        # Verify task status was not changed in database
+        from tasks.models import Task
+        unchanged_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(unchanged_task.status, 'todo')
+
+    def test_update_task_status_and_fields_via_patch_rejected(self):
+        """Test that including status with other fields is rejected."""
+        data = {
+            'title': 'New Title',
+            'status': 'in_progress'
+        }
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('status', response.data)
+
+        # Verify no changes were made
+        from tasks.models import Task
+        unchanged_task = Task.objects.get(id=self.task.id)
+        self.assertEqual(unchanged_task.title, 'Test Task')
+        self.assertEqual(unchanged_task.status, 'todo')
+
+    def test_update_task_title_validation(self):
+        """Test title validation on PATCH update."""
+        data = {'title': 'Hi'}  # Too short
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('title', response.data)
+        self.assertIn('at least 3 characters', str(response.data))
+
+    def test_update_task_priority_validation(self):
+        """Test priority validation on PATCH update."""
+        data = {'priority': 'urgent'}  # Invalid priority
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('priority', response.data)
+
+    def test_update_task_due_date_success(self):
+        """Test updating due date with PATCH."""
+        data = {'due_date': (timezone.now() + timedelta(days=5)).isoformat()}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(response.data['task']['due_date'])
+
+    def test_update_task_due_date_validation(self):
+        """Test due date validation on PATCH update."""
+        data = {'due_date': (timezone.now() - timedelta(days=1)).isoformat()}  # Past date
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('due_date', response.data)
+        self.assertIn('cannot be in the past', str(response.data))
+
+    def test_update_task_unauthenticated(self):
+        """Test that unauthenticated users cannot update tasks."""
+        self.client.credentials()
+
+        data = {'title': 'Updated Title'}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_update_other_user_task(self):
+        """Test that user cannot update another user's task."""
+        # Create another user
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='otherpass123'
+        )
+
+        # Create task for other user
+        from tasks.models import Task
+        other_task = Task.objects.create(
+            title='Other User Task',
+            description='This belongs to other user',
+            priority='high',
+            status='todo',
+            user=other_user
+        )
+
+        # Try to update other user's task
+        other_task_url = f'/api/tasks/{other_task.id}/'
+        data = {'title': 'Hacked Title'}
+
+        response = self.client.patch(other_task_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Verify other task was not changed
+        unchanged_task = Task.objects.get(id=other_task.id)
+        self.assertEqual(unchanged_task.title, 'Other User Task')
+
+    def test_update_nonexistent_task(self):
+        """Test updating a task that doesn't exist."""
+        nonexistent_url = '/api/tasks/99999/'
+        data = {'title': 'Updated Title'}
+
+        response = self.client.patch(nonexistent_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_task_partial_no_changes(self):
+        """Test PATCH with empty data."""
+        data = {}
+
+        response = self.client.patch(self.task_update_url, data, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Task should remain unchanged
+        self.assertEqual(response.data['task']['title'], 'Test Task')
 
 
 class DjangoSetupTests(TestCase):
