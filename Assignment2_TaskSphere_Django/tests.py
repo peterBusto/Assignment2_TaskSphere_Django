@@ -1347,6 +1347,134 @@ class TaskUpdateAPITests(TestCase):
         self.assertEqual(response.data['task']['title'], 'Test Task')
 
 
+class TaskDeletionAPITests(TestCase):
+    """Tests for task deletion API endpoint."""
+
+    def setUp(self):
+        """Set up test client and create a test user with token and task."""
+        self.client = APIClient()
+
+        # Create a test user
+        self.user = User.objects.create_user(
+            username='testuser',
+            email='test@example.com',
+            password='testpass123',
+            first_name='Test',
+            last_name='User'
+        )
+
+        # Create and set authentication token
+        self.token = Token.objects.create(user=self.user)
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token.key}')
+
+        # Create a test task
+        from tasks.models import Task
+        self.task = Task.objects.create(
+            title='Test Task',
+            description='This is a test task',
+            priority='medium',
+            status='todo',
+            user=self.user
+        )
+        self.task_delete_url = f'/api/tasks/{self.task.id}/'
+
+    def test_delete_task_success(self):
+        """Test successful task deletion by owner."""
+        response = self.client.delete(self.task_delete_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertEqual(response.data['message'], 'Task deleted successfully')
+
+        # Verify task was deleted from database
+        from tasks.models import Task
+        self.assertFalse(Task.objects.filter(id=self.task.id).exists())
+
+    def test_delete_task_unauthenticated(self):
+        """Test that unauthenticated users cannot delete tasks."""
+        # Remove authentication
+        self.client.credentials()
+
+        response = self.client.delete(self.task_delete_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Verify task was not deleted from database
+        from tasks.models import Task
+        self.assertTrue(Task.objects.filter(id=self.task.id).exists())
+
+    def test_delete_task_with_invalid_token(self):
+        """Test that invalid token cannot delete tasks."""
+        self.client.credentials(HTTP_AUTHORIZATION='Token invalidtoken123')
+
+        response = self.client.delete(self.task_delete_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # Verify task was not deleted from database
+        from tasks.models import Task
+        self.assertTrue(Task.objects.filter(id=self.task.id).exists())
+
+    def test_delete_other_user_task(self):
+        """Test that user cannot delete another user's task."""
+        # Create another user
+        other_user = User.objects.create_user(
+            username='otheruser',
+            email='other@example.com',
+            password='otherpass123'
+        )
+
+        # Create task for other user
+        from tasks.models import Task
+        other_task = Task.objects.create(
+            title='Other User Task',
+            description='This belongs to other user',
+            priority='high',
+            status='todo',
+            user=other_user
+        )
+
+        # Try to delete other user's task
+        other_task_url = f'/api/tasks/{other_task.id}/'
+        response = self.client.delete(other_task_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+
+        # Verify other task was not deleted
+        self.assertTrue(Task.objects.filter(id=other_task.id).exists())
+
+    def test_delete_nonexistent_task(self):
+        """Test deleting a task that doesn't exist."""
+        nonexistent_url = '/api/tasks/99999/'
+
+        response = self.client.delete(nonexistent_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertIn('error', response.data)
+        self.assertEqual(response.data['error'], 'Task not found')
+
+    def test_delete_task_multiple_tasks(self):
+        """Test deleting one task doesn't affect other tasks."""
+        # Create another task for the same user
+        from tasks.models import Task
+        task2 = Task.objects.create(
+            title='Second Task',
+            description='Another task',
+            priority='low',
+            status='in_progress',
+            user=self.user
+        )
+
+        # Delete the first task
+        response = self.client.delete(self.task_delete_url, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        # Verify first task was deleted but second task still exists
+        self.assertFalse(Task.objects.filter(id=self.task.id).exists())
+        self.assertTrue(Task.objects.filter(id=task2.id).exists())
+
+
 class DjangoSetupTests(TestCase):
     """Tests to verify Django is properly configured."""
     
