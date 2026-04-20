@@ -172,7 +172,11 @@ STATIC_URL = 'static/'
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # React app
     "https://assignment2-task-sphere-django.vercel.app" # Vercel Production
+    "https://assignment2-task-sphere-react.vercel.app" # Vercel Production
+
 ]
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 # Allow specific headers
 CORS_ALLOW_HEADERS = [
